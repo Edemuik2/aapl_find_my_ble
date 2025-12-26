@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:developer' as developer; // Импорт для логирования
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class BLEProvider extends ChangeNotifier {
   List<ScanResult> scanResults = [];
@@ -15,10 +17,11 @@ class BLEProvider extends ChangeNotifier {
 
   StreamSubscription? _scanSub;
   StreamSubscription? _compassSub;
+
   @override
   void dispose() {
     _scanSub?.cancel();
-    _compassSub?.cancel(); // Теперь переменная используется
+    _compassSub?.cancel();
     super.dispose();
   }
 
@@ -26,22 +29,50 @@ class BLEProvider extends ChangeNotifier {
     _initCompass();
   }
 
-  void startScan() {
-    FlutterBluePlus.startScan(
-      timeout: const Duration(seconds: 10),
-      androidUsesFineLocation: true,
-    );
-    _scanSub = FlutterBluePlus.scanResults.listen((results) {
-      scanResults = results
-          .where((r) => r.device.platformName.isNotEmpty)
-          .toList();
-      notifyListeners();
-    });
+  // Метод остановки сканирования (ИСПРАВЛЕНО: добавлен)
+  Future<void> stopScan() async {
+    await FlutterBluePlus.stopScan();
+    _scanSub?.cancel();
   }
 
-  void stopScan() {
-    FlutterBluePlus.stopScan();
-    _scanSub?.cancel();
+  void startScan() async {
+    // 1. ПРИНУДИТЕЛЬНО просим права на Геопозицию и Bluetooth
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+    ].request();
+
+    // Если пользователь отказал — выходим (ИСПРАВЛЕНО: замена print на log)
+    if (statuses[Permission.locationWhenInUse] != PermissionStatus.granted) {
+      developer.log("Доступ к геопозиции отклонен");
+      return;
+    }
+
+    // 2. Проверяем состояние адаптера
+    var state = await FlutterBluePlus.adapterState.first;
+    if (state != BluetoothAdapterState.on) {
+      developer.log("Bluetooth выключен");
+      return;
+    }
+
+    scanResults.clear();
+    notifyListeners();
+
+    try {
+      // ИСПРАВЛЕНО: удален параметр appleAllowDuplicates (устарел)
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
+
+      _scanSub?.cancel();
+      _scanSub = FlutterBluePlus.scanResults.listen((results) {
+        // Сортировка по силе сигнала
+        results.sort((a, b) => b.rssi.compareTo(a.rssi));
+        scanResults = results;
+        notifyListeners();
+      }, onError: (e) => developer.log("Ошибка стрима: $e"));
+    } catch (e) {
+      developer.log("Ошибка старта сканирования: $e");
+    }
   }
 
   void selectDevice(BluetoothDevice device) {
@@ -50,15 +81,14 @@ class BLEProvider extends ChangeNotifier {
     _startTracking();
   }
 
-  // Добавляем ключевое слово async перед открывающей скобкой
   void _startTracking() async {
-    // Убираем appleAllowDuplicates, так как он часто вызывает конфликты в новых версиях
-    // Если нужно постоянное обновление на iOS, используется continuousUpdates
+    // Для трекинга конкретного устройства используем continuousUpdates
     await FlutterBluePlus.startScan(
       androidScanMode: AndroidScanMode.lowLatency,
-      continuousUpdates: true, // Замена для получения постоянных данных RSSI
+      continuousUpdates: true,
     );
 
+    _scanSub?.cancel();
     _scanSub = FlutterBluePlus.scanResults.listen((results) {
       for (ScanResult r in results) {
         if (r.device.remoteId == targetDevice!.remoteId) {
@@ -76,8 +106,7 @@ class BLEProvider extends ChangeNotifier {
   }
 
   void _initCompass() {
-    // Упрощенный расчет направления по магнитометру
-    magnetometerEventStream().listen((event) {
+    _compassSub = magnetometerEventStream().listen((event) {
       double heading = atan2(event.y, event.x) * (180 / pi);
       deviceHeading = heading < 0 ? heading + 360 : heading;
       notifyListeners();
@@ -85,15 +114,21 @@ class BLEProvider extends ChangeNotifier {
   }
 
   double _calculateDistance(int rssi) {
-    // Формула: d = 10 ^ ((MeasuredPower - RSSI) / (10 * N))
+    // Константа для iPhone/Android (мощность сигнала на 1 метре)
     int txPower = -59;
-    return pow(10, ((txPower - rssi) / (10 * 2.2))).toDouble();
+    if (rssi == 0) return -1.0;
+
+    double ratio = rssi * 1.0 / txPower;
+    if (ratio < 1.0) {
+      return pow(ratio, 10).toDouble();
+    } else {
+      return (0.89976) * pow(ratio, 7.7095) + 0.111;
+    }
   }
 
   void reset() {
     targetDevice = null;
-    stopScan();
-    startScan();
+    stopScan(); // Теперь метод существует
     notifyListeners();
   }
 }

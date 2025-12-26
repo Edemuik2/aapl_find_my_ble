@@ -13,13 +13,13 @@ class DeviceListScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          "Устройства рядом",
-          style: TextStyle(fontWeight: FontWeight.w300, letterSpacing: 1.2),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
+        title: const Text("Устройства рядом"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => context.read<BLEProvider>().startScan(),
+          ),
+        ],
       ),
       body: ble.scanResults.isEmpty
           ? const Center(
