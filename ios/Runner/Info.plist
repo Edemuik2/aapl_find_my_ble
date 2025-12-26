@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Нам нужен Bluetooth, чтобы найти ваши устройства и определить расстояние до них.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>Приложение использует Bluetooth для связи с вашими аксессуарами.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Геолокация нужна для работы Bluetooth-сканера (требование Apple).</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Геолокация нужна для поиска Bluetooth даже в фоновом режиме.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>Нам нужен доступ к гироскопу и компасу, чтобы стрелка указывала правильное направление.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
